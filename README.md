@@ -1,2 +1,3 @@
 # ddrawdx
-A differentiable drawing library in JAX
+
+A small set of differentiable drawing primitives in JAX
