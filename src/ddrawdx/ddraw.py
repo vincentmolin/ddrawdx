@@ -14,10 +14,15 @@ class Canvas(NamedTuple):
 
 
 def show(c: Canvas):
-    if c.image.ndim > 1:
-        return plt.imshow(c.image)
+    fig, ax = plt.subplots()
+    if c.image.shape[-1] > 1:
+        ax.imshow(c.image)
     else:
-        return plt.imshow(c.image, cmap="gray", vmin=0, vmax=1)
+        ax.imshow(c.image, cmap="gray", vmin=0, vmax=1)
+    ax.tick_params(
+        left=False, right=False, labelleft=False, labelbottom=False, bottom=False
+    )
+    return fig, ax
 
 
 @jax.jit
@@ -39,11 +44,13 @@ def canvas(width: int, height: Optional[int] = None, format: str = "GRAY"):
     mesh = jnp.meshgrid(jnp.linspace(0, 1, width), jnp.linspace(1, 0, height))
     return Canvas(image=image, mesh=mesh)
 
+
 @jax.jit
 def origin(c: Canvas):
     w, h, _ = c.image.shape
-    mesh = jnp.meshgrid(jnp.linspace(-1,1,w), jnp.linspace(1,-1,h))
+    mesh = jnp.meshgrid(jnp.linspace(-1, 1, w), jnp.linspace(1, -1, h))
     return Canvas(c.image, mesh), c.mesh
+
 
 @jax.jit
 def scale(c: Canvas, xs, ys):
@@ -136,30 +143,3 @@ def draw_line(
     n = rot90(v)
     ps = jnp.array([p0 - v + n, p1 + v + n, p1 + v - n, p0 - v - n])
     return fill_poly(c, ps, sharpness, color)
-
-
-if __name__ == "__main__":
-    col = jnp.array([0.8, 0.2, 0.1])
-    c = canvas(200, 200, "RGB")
-    c, r = origin(c)
-    def flower(c):
-        for s in jnp.arange(0.0, 0.82, 0.05):
-            c, _ = rotate(c, s)
-            c = fill_rect(c, -0.9 + s, -0.9 + s, 0.9 - s, 0.9 - s, col * (1 -  s), 400 * (0.88 - s))
-        return c
-    flower = jax.jit(flower)
-    c = flower(c)
-    show(c)
-    c = fill_rect(c, 0.2, 0.2, 0.8, 0.6, jnp.array([0.0, 1.0, 0.0]))
-    show(c)
-    ps = jnp.array(
-        [jnp.array([x, y]) for (x, y) in [(0.1, 0.1), (0.1, 0.5), (0.5, 0.1)]]
-    )
-    c = fill_poly(c, ps, color=jnp.array([1.0, 0.0, 0.0]))
-    show(c)
-    c, r = translate(c, 0.5,0.5)
-    c = draw_line(c, 0.0, 0.0, 0.25, 0.25)
-    show(c)
-    c, _ = rotate(c, jnp.pi/2)
-    c = draw_line(c, 0.0, 0.0, 0.25, 0.25)
-    show(c)
