@@ -2,18 +2,31 @@ import jax.numpy as jnp
 import jax
 
 import matplotlib.pyplot as plt
+import matplotlib.figure
+import matplotlib.axes
 
-from typing import Optional, NamedTuple
+from typing import Optional, NamedTuple, Tuple, List
 
 format_channels = {"GRAY": 1, "RGB": 3}
 
+Mesh = List[jnp.ndarray]
+Image = jnp.ndarray
+
 
 class Canvas(NamedTuple):
+    """
+    A Canvas is a tuple with pixel values in the width*height*channels array 'image'
+    and coordinate meshes in 'mesh'. Construct with 'ddrawdx.canvas'
+    """
+
     image: jnp.ndarray
-    mesh: jnp.ndarray
+    mesh: List[jnp.ndarray]
 
 
-def show(c: Canvas):
+def show(c: Canvas) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
+    """
+    Simple 'matplotlib.pyplot.imshow' wrapper.
+    """
     fig, ax = plt.subplots()
     if c.image.shape[-1] > 1:
         ax.imshow(c.image)
@@ -26,18 +39,25 @@ def show(c: Canvas):
 
 
 @jax.jit
-def normalize(x: jnp.ndarray):
+def normalize(x: jnp.ndarray) -> jnp.ndarray:
     return x / jnp.linalg.norm(x)
 
 
 @jax.jit
-def rotmat(angle: float):
+def rotmat(angle: float) -> jnp.ndarray:
+    """
+    2D rotation matrix
+    """
     s = jnp.sin(angle)
     c = jnp.cos(angle)
     return jnp.array([[c, -s], [s, c]])
 
 
-def canvas(width: int, height: Optional[int] = None, format: str = "GRAY"):
+def canvas(width: int, height: Optional[int] = None, format: str = "RGB") -> Canvas:
+    """
+    Constructs a canvas of dimensions 'width' x 'height', with coordinates [0,...,1] x [0,...,1]
+    and origin in the lower left corner.
+    """
     height = height or width
     channels = format_channels[format]
     image = jnp.ones((width, height, channels))
@@ -46,26 +66,33 @@ def canvas(width: int, height: Optional[int] = None, format: str = "GRAY"):
 
 
 @jax.jit
-def origin(c: Canvas):
+def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
+    """
+    Translates the origin of 'c' to the center, and rescales the mesh to [-1,...,1]x[-1,...,1].
+    Returns the new Canvas and the old mesh for 'restore'
+    """
     w, h, _ = c.image.shape
     mesh = jnp.meshgrid(jnp.linspace(-1, 1, w), jnp.linspace(1, -1, h))
     return Canvas(c.image, mesh), c.mesh
 
 
 @jax.jit
-def scale(c: Canvas, xs, ys):
+def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]:
+    """Scale coordinates multiplicatively"""
     mesh = c.mesh
-    return Canvas(image=c.image, mesh=[mesh[0] * xs, mesh[1] * ys]), mesh
+    return Canvas(image=c.image, mesh=[mesh[0] * xscale, mesh[1] * yscale]), mesh
 
 
 @jax.jit
-def translate(c: Canvas, dx, dy):
+def translate(c: Canvas, dx: float, dy: float) -> Tuple[Canvas, Mesh]:
+    """Translate mesh 'dx','dy' units"""
     mesh = c.mesh
     return Canvas(image=c.image, mesh=[mesh[0] - dx, mesh[1] - dy]), mesh
 
 
 @jax.jit
-def rotate(c: Canvas, angle: float):
+def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]:
+    """Rotate mesh 'angle' radians"""
     m = jnp.stack(c.mesh, axis=-1)
     m = jnp.reshape(m, (-1, 2))
     rm = rotmat(angle)
@@ -75,7 +102,8 @@ def rotate(c: Canvas, angle: float):
 
 
 @jax.jit
-def restore(c: Canvas, mesh):
+def restore(c: Canvas, mesh: Mesh) -> Canvas:
+    """Restores coordinates to earlier mesh"""
     return Canvas(c.image, mesh)
 
 
@@ -102,24 +130,36 @@ def _fill(image: jnp.ndarray, alpha: jnp.ndarray, color: jnp.ndarray):
 
 
 @jax.jit
-def rot90(v: jnp.ndarray):
+def _rot90(v: jnp.ndarray):
     return jnp.array([-v[1], v[0]])
 
 
 @jax.jit
-def fill_rect(c: Canvas, x0, y0, x1, y1, color: jnp.ndarray, sharpness=100.0):
+def fill_rect(
+    c: Canvas,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    color: jnp.ndarray,
+    sharpness: float = 100.0,
+) -> Canvas:
+    """Fill axis-parallell rectangle with corners in (x0,y0), (x1,y1). Does not work as expected with a rotated Canvas."""
     alpha = _m_orth_bump(c.mesh, x0, y0, x1, y1, sharpness)
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
 @jax.jit
-def fill_poly(c: Canvas, ps, sharpness=300.0, color=jnp.array([0.0, 0.0, 0.0])):
+def fill_poly(
+    c: Canvas, ps: jnp.array, sharpness=300.0, color=jnp.array([0.0, 0.0, 0.0])
+) -> Canvas:
+    """Fill polygon with clockwise oriented corners in 'ps'"""
     msh = jnp.stack(c.mesh, axis=-1)
     alpha = jnp.ones(msh.shape[:-1])
     nps = ps.shape[0]
     for i in range(nps):
         v = normalize(ps[(i + 1) % nps] - ps[i])
-        n = rot90(v)
+        n = _rot90(v)
         d = jnp.dot(n, ps[i])
         act = jnp.dot(msh, n) - d
         alpha = alpha * jax.nn.sigmoid(-sharpness * act)
@@ -136,10 +176,11 @@ def draw_line(
     lineweight=0.01,
     color: jnp.ndarray = jnp.array([0.0, 0.0, 0.0]),
     sharpness=400.0,
-):
+) -> Canvas:
+    """Draw a line between (x0,y0) and (x1,y1)"""
     p0 = jnp.array([x0, y0])
     p1 = jnp.array([x1, y1])
     v = normalize(p1 - p0) * lineweight
-    n = rot90(v)
+    n = _rot90(v)
     ps = jnp.array([p0 - v + n, p1 + v + n, p1 + v - n, p0 - v - n])
     return fill_poly(c, ps, sharpness, color)
