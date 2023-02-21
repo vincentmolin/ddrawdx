@@ -5,7 +5,7 @@
 [Ddrawdx](./index.md#ddrawdx) /
 Ddraw
 
-> Auto-generated documentation for [src.ddrawdx.ddraw](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py) module.
+> Auto-generated documentation for [src.ddrawdx.ddraw](../../../src/ddrawdx/ddraw.py) module.
 
 - [Ddraw](#ddraw)
   - [Canvas](#canvas)
@@ -24,7 +24,7 @@ Ddraw
 
 ## Canvas
 
-[Show source in ddraw.py:16](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L16)
+[Show source in ddraw.py:16](../../../src/ddrawdx/ddraw.py#L16)
 
 A Canvas is a tuple with pixel values in the width*height*channels array 'image'
 and coordinate meshes in 'mesh'. Construct with 'ddrawdx.canvas'
@@ -40,7 +40,7 @@ class Canvas(NamedTuple):
 
 ## canvas
 
-[Show source in ddraw.py:56](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L56)
+[Show source in ddraw.py:56](../../../src/ddrawdx/ddraw.py#L56)
 
 Constructs a canvas of dimensions 'width' x 'height', with coordinates [0,...,1] x [0,...,1]
 and origin in the lower left corner.
@@ -60,7 +60,7 @@ def canvas(width: int, height: Optional[int] = None, format: str = "RGB") -> Can
 
 ## draw_line
 
-[Show source in ddraw.py:169](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L169)
+[Show source in ddraw.py:169](../../../src/ddrawdx/ddraw.py#L169)
 
 Draw a line between (x0,y0) and (x1,y1)
 
@@ -89,7 +89,7 @@ def draw_line(
 
 ## fill_poly
 
-[Show source in ddraw.py:152](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L152)
+[Show source in ddraw.py:152](../../../src/ddrawdx/ddraw.py#L152)
 
 Fill polygon with clockwise oriented corners in 'ps'
 
@@ -111,7 +111,7 @@ def fill_poly(
 
 ## fill_rect
 
-[Show source in ddraw.py:137](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L137)
+[Show source in ddraw.py:137](../../../src/ddrawdx/ddraw.py#L137)
 
 Fill axis-parallell rectangle with corners in (x0,y0), (x1,y1). Does not work as expected with a rotated Canvas.
 
@@ -139,7 +139,7 @@ def fill_rect(
 
 ## normalize
 
-[Show source in ddraw.py:41](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L41)
+[Show source in ddraw.py:41](../../../src/ddrawdx/ddraw.py#L41)
 
 #### Signature
 
@@ -153,7 +153,7 @@ def normalize(x: jnp.ndarray) -> jnp.ndarray:
 
 ## origin
 
-[Show source in ddraw.py:68](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L68)
+[Show source in ddraw.py:68](../../../src/ddrawdx/ddraw.py#L68)
 
 Translates the origin of 'c' to the center, and rescales the mesh to [-1,...,1]x[-1,...,1].
 Returns the new Canvas and the old mesh for 'restore'
@@ -175,7 +175,7 @@ def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
 
 ## restore
 
-[Show source in ddraw.py:104](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L104)
+[Show source in ddraw.py:104](../../../src/ddrawdx/ddraw.py#L104)
 
 Restores coordinates to earlier mesh
 
@@ -196,7 +196,7 @@ def restore(c: Canvas, mesh: Mesh) -> Canvas:
 
 ## rotate
 
-[Show source in ddraw.py:93](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L93)
+[Show source in ddraw.py:93](../../../src/ddrawdx/ddraw.py#L93)
 
 Rotate mesh 'angle' radians
 
@@ -217,7 +217,7 @@ def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]:
 
 ## rotmat
 
-[Show source in ddraw.py:46](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L46)
+[Show source in ddraw.py:46](../../../src/ddrawdx/ddraw.py#L46)
 
 2D rotation matrix
 
@@ -233,7 +233,7 @@ def rotmat(angle: float) -> jnp.ndarray:
 
 ## scale
 
-[Show source in ddraw.py:79](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L79)
+[Show source in ddraw.py:79](../../../src/ddrawdx/ddraw.py#L79)
 
 Scale coordinates multiplicatively
 
@@ -254,7 +254,7 @@ def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]:
 
 ## show
 
-[Show source in ddraw.py:26](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L26)
+[Show source in ddraw.py:26](../../../src/ddrawdx/ddraw.py#L26)
 
 Simple 'matplotlib.pyplot.imshow' wrapper.
 
@@ -273,7 +273,7 @@ def show(c: Canvas) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
 
 ## translate
 
-[Show source in ddraw.py:86](https://github.com/vincentmolin/ddrawdx/blob/main/src/ddrawdx/ddraw.py#L86)
+[Show source in ddraw.py:86](../../../src/ddrawdx/ddraw.py#L86)
 
 Translate mesh 'dx','dy' units
 

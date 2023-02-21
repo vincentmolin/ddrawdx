@@ -1,8 +1,8 @@
-site_name: "Ddrawdx"
+site_name: "ddrawdx"
 repo_url: "https://github.com/vincentmolin/ddrawdx"
 site_dir: "site"
 docs_dir: "docs"
 
 theme:
-  name: readthedocs
+  name: material
   include_sidebar: true
