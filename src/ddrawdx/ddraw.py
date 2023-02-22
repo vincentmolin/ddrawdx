@@ -53,14 +53,22 @@ def rotmat(angle: float) -> jnp.ndarray:
     return jnp.array([[c, -s], [s, c]])
 
 
-def canvas(width: int, height: Optional[int] = None, format: str = "RGB") -> Canvas:
+def canvas(
+    width: int,
+    height: Optional[int] = None,
+    format: str = "RGB",
+    background: Optional[jnp.ndarray] = None,
+) -> Canvas:
     """
-    Constructs a canvas of dimensions 'width' x 'height', with coordinates [0,...,1] x [0,...,1]
+    Constructs a canvas of dimensions ```width x height```, with coordinates [0,...,1] x [0,...,1]
     and origin in the lower left corner.
     """
     height = height or width
     channels = format_channels[format]
     image = jnp.ones((width, height, channels))
+    if background is not None:
+        assert channels == len(background)
+        image = image * jnp.expand_dims(background, axis=[0, 1])
     mesh = jnp.meshgrid(jnp.linspace(0, 1, width), jnp.linspace(1, 0, height))
     return Canvas(image=image, mesh=mesh)
 
@@ -69,7 +77,7 @@ def canvas(width: int, height: Optional[int] = None, format: str = "RGB") -> Can
 def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
     """
     Translates the origin of 'c' to the center, and rescales the mesh to [-1,...,1]x[-1,...,1].
-    Returns the new Canvas and the old mesh for 'restore'
+    Returns the new Canvas and the old mesh for ```restore```
     """
     w, h, _ = c.image.shape
     mesh = jnp.meshgrid(jnp.linspace(-1, 1, w), jnp.linspace(1, -1, h))
@@ -78,9 +86,9 @@ def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
 
 @jax.jit
 def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]:
-    """Scale coordinates multiplicatively"""
+    """Scale mesh, returning the new Canvas and old mesh for ```restore```"""
     mesh = c.mesh
-    return Canvas(image=c.image, mesh=[mesh[0] * xscale, mesh[1] * yscale]), mesh
+    return Canvas(image=c.image, mesh=[mesh[0] / xscale, mesh[1] / yscale]), mesh
 
 
 @jax.jit
@@ -108,17 +116,17 @@ def restore(c: Canvas, mesh: Mesh) -> Canvas:
 
 
 @jax.jit
-def _bump_1d(x, x0, x1, sharpness=100.0):
+def _bump_1d(x, x0, x1, sharpness: float = 100.0):
     return jax.nn.sigmoid(sharpness * (x - x0)) * jax.nn.sigmoid(-sharpness * (x - x1))
 
 
 @jax.jit
-def _orth_bump(x, y, x0, y0, x1, y1, sharpness=100.0):
+def _orth_bump(x, y, x0, y0, x1, y1, sharpness: float = 100.0):
     return _bump_1d(x, x0, x1, sharpness) * _bump_1d(y, y0, y1, sharpness)
 
 
 @jax.jit
-def _m_orth_bump(mesh, x0, y0, x1, y1, sharpness=100.0):
+def _m_orth_bump(mesh, x0, y0, x1, y1, sharpness: float = 100.0):
     return _orth_bump(mesh[0], mesh[1], x0, y0, x1, y1, sharpness)
 
 
@@ -144,14 +152,14 @@ def fill_rect(
     color: jnp.ndarray,
     sharpness: float = 100.0,
 ) -> Canvas:
-    """Fill axis-parallell rectangle with corners in (x0,y0), (x1,y1). Does not work as expected with a rotated Canvas."""
+    """Fill axis-parallell rectangle with corners in (x0,y0), (x1,y1)."""
     alpha = _m_orth_bump(c.mesh, x0, y0, x1, y1, sharpness)
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
 @jax.jit
 def fill_poly(
-    c: Canvas, ps: jnp.array, sharpness=300.0, color=jnp.array([0.0, 0.0, 0.0])
+    c: Canvas, ps: jnp.array, sharpness: float = 300.0, color=jnp.array([0.0, 0.0, 0.0])
 ) -> Canvas:
     """Fill polygon with clockwise oriented corners in 'ps'"""
     msh = jnp.stack(c.mesh, axis=-1)
@@ -169,13 +177,13 @@ def fill_poly(
 @jax.jit
 def draw_line(
     c: Canvas,
-    x0,
-    y0,
-    x1,
-    y1,
-    lineweight=0.01,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    lineweight: float = 0.01,
     color: jnp.ndarray = jnp.array([0.0, 0.0, 0.0]),
-    sharpness=400.0,
+    sharpness: float = 400.0,
 ) -> Canvas:
     """Draw a line between (x0,y0) and (x1,y1)"""
     p0 = jnp.array([x0, y0])
@@ -184,3 +192,18 @@ def draw_line(
     n = _rot90(v)
     ps = jnp.array([p0 - v + n, p1 + v + n, p1 + v - n, p0 - v - n])
     return fill_poly(c, ps, sharpness, color)
+
+
+@jax.jit
+def fill_circle(
+    c: Canvas,
+    cx: float,
+    cy: float,
+    r: float,
+    color: jnp.ndarray,
+    sharpness: float = 400.0,
+):
+    sqdist = (c.mesh[0] - cx) ** 2 + (c.mesh[1] - cy) ** 2
+    dist = jnp.sqrt(sqdist)
+    alpha = jax.nn.sigmoid(sharpness * (r - dist))
+    return Canvas(_fill(c.image, alpha, color), c.mesh)
