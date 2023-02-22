@@ -2,7 +2,7 @@
 
 A small set of differentiable and jittable drawing primitives in JAX. A ```Canvas``` consists of a data array with pixel values and a mesh of evaluation points. This mesh can be translated, scaled and rotated. Any of the drawing functions evaluates a smooth function on the mesh to create a "mixing" matrix, and mixes pixels in the image with the color supplied. Currently all smooth transitions are sigmoid based. The sharpness of the transition is not scale invariant, i.e. if one zooms out and draws a shape using the same sharpness this will result in a sharper image
 
-Function signature reference here.
+[Function signature reference here.](https://vincentmolin.github.io/ddrawdx/src/ddrawdx/ddraw.html)
 
 ### Examples
 
