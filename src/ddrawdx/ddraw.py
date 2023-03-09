@@ -159,7 +159,7 @@ def fill_rect(
 
 @jax.jit
 def fill_poly(
-    c: Canvas, ps: jnp.array, sharpness: float = 300.0, color=jnp.array([0.0, 0.0, 0.0])
+    c: Canvas, ps: jnp.array, color=jnp.array([0.0, 0.0, 0.0]), sharpness: float = 300.0
 ) -> Canvas:
     """Fill polygon with clockwise oriented corners in 'ps'"""
     msh = jnp.stack(c.mesh, axis=-1)
