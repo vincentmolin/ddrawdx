@@ -129,7 +129,7 @@ Fill polygon with clockwise oriented corners in 'ps'
 ```python
 @jax.jit
 def fill_poly(
-    c: Canvas, ps: jnp.array, sharpness: float = 300.0, color=jnp.array([0.0, 0.0, 0.0])
+    c: Canvas, ps: jnp.array, color=jnp.array([0.0, 0.0, 0.0]), sharpness: float = 300.0
 ) -> Canvas:
     ...
 ```
