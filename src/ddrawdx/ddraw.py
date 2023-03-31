@@ -12,6 +12,11 @@ format_channels = {"GRAY": 1, "RGB": 3}
 Mesh = List[jnp.ndarray]
 Image = jnp.ndarray
 
+DARKGRAY = jnp.array([0.2, 0.2, 0.2])
+YELLOW = jnp.array([255, 222, 52], jnp.float32) / 255.0
+BLACK = jnp.array([0.0, 0.0, 0.0])
+WHITE = jnp.array([1.0, 1.0, 1.0])
+
 
 class Canvas(NamedTuple):
     """
@@ -73,7 +78,7 @@ def canvas(
     return Canvas(image=image, mesh=mesh)
 
 
-@jax.jit
+# @jax.jit
 def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
     """
     Translates the origin of 'c' to the center, and rescales the mesh to [-1,...,1]x[-1,...,1].
@@ -84,21 +89,21 @@ def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
     return Canvas(c.image, mesh), c.mesh
 
 
-@jax.jit
+# @jax.jit
 def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]:
     """Scale mesh, returning the new Canvas and old mesh for ```restore```"""
     mesh = c.mesh
     return Canvas(image=c.image, mesh=[mesh[0] / xscale, mesh[1] / yscale]), mesh
 
 
-@jax.jit
+# @jax.jit
 def translate(c: Canvas, dx: float, dy: float) -> Tuple[Canvas, Mesh]:
     """Translate mesh 'dx','dy' units"""
     mesh = c.mesh
     return Canvas(image=c.image, mesh=[mesh[0] - dx, mesh[1] - dy]), mesh
 
 
-@jax.jit
+# @jax.jit
 def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]:
     """Rotate mesh 'angle' radians"""
     m = jnp.stack(c.mesh, axis=-1)
@@ -109,7 +114,7 @@ def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]:
     return Canvas(c.image, [m[:, :, 0], m[:, :, 1]]), c.mesh
 
 
-@jax.jit
+# @jax.jit
 def restore(c: Canvas, mesh: Mesh) -> Canvas:
     """Restores coordinates to earlier mesh"""
     return Canvas(c.image, mesh)
@@ -143,6 +148,14 @@ def _rot90(v: jnp.ndarray):
 
 
 @jax.jit
+def _linear_alpha(mesh, reference, normal, sharpness):
+    d = jnp.dot(normal, reference)
+    msh = jnp.stack(mesh, axis=-1)
+    act = jnp.dot(msh, normal) - d
+    return jax.nn.sigmoid(-sharpness * act)
+
+
+# @jax.jit
 def fill_rect(
     c: Canvas,
     x0: float,
@@ -157,7 +170,7 @@ def fill_rect(
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
-@jax.jit
+# @jax.jit
 def fill_poly(
     c: Canvas, ps: jnp.array, color=jnp.array([0.0, 0.0, 0.0]), sharpness: float = 300.0
 ) -> Canvas:
@@ -174,7 +187,7 @@ def fill_poly(
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
-@jax.jit
+# @jax.jit
 def draw_line(
     c: Canvas,
     x0: float,
@@ -194,7 +207,14 @@ def draw_line(
     return fill_poly(c, ps, sharpness, color)
 
 
-@jax.jit
+def _circle_alpha(mesh, cx, cy, r, sharpness):
+    sqdist = (mesh[0] - cx) ** 2 + (mesh[1] - cy) ** 2
+    dist = jnp.sqrt(sqdist)
+    alpha = jax.nn.sigmoid(sharpness * (r - dist))
+    return alpha
+
+
+# @jax.jit
 def fill_circle(
     c: Canvas,
     cx: float,
@@ -203,7 +223,32 @@ def fill_circle(
     color: jnp.ndarray,
     sharpness: float = 400.0,
 ):
-    sqdist = (c.mesh[0] - cx) ** 2 + (c.mesh[1] - cy) ** 2
-    dist = jnp.sqrt(sqdist)
-    alpha = jax.nn.sigmoid(sharpness * (r - dist))
+    alpha = _circle_alpha(c.mesh, cx, cy, r, sharpness)
+    return Canvas(_fill(c.image, alpha, color), c.mesh)
+
+
+def draw_arc(
+    c: Canvas,
+    cx: float,
+    cy: float,
+    r: float,
+    a0: float,
+    a1: float,
+    lineweight: float = 0.01,
+    color: jnp.ndarray = BLACK,
+    sharpness: float = 400,
+):
+    inner = _circle_alpha(c.mesh, cx, cy, r - lineweight, sharpness)
+    outer = _circle_alpha(c.mesh, cx, cy, r + lineweight, sharpness)
+    alpha = (1 - inner) * outer
+
+    p0 = jnp.array([jnp.cos(a0) * r + cx, jnp.sin(a0) * r + cy])
+    n0 = jnp.array([jnp.sin(a0), -jnp.cos(a0)])
+
+    p1 = jnp.array([jnp.cos(a1) * r + cx, jnp.sin(a1) * r + cy])
+    n1 = jnp.array([-jnp.sin(a1), jnp.cos(a1)])
+
+    alpha *= _linear_alpha(c.mesh, p0, n0, sharpness)
+    alpha *= _linear_alpha(c.mesh, p1, n1, sharpness)
+
     return Canvas(_fill(c.image, alpha, color), c.mesh)
