@@ -227,6 +227,22 @@ def fill_circle(
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
+def draw_circle(
+    c: Canvas,
+    cx: float,
+    cy: float,
+    r: float,
+    lineweight: float = 0.01,
+    color: jnp.ndarray = BLACK,
+    sharpness: float = 400,
+):
+    "Draw circle with radius r around (cx, cy)"
+    inner = _circle_alpha(c.mesh, cx, cy, r - lineweight, sharpness)
+    outer = _circle_alpha(c.mesh, cx, cy, r + lineweight, sharpness)
+    alpha = (1 - inner) * outer
+    return Canvas(_fill(c.image, alpha, color), c.mesh)
+
+
 def draw_arc(
     c: Canvas,
     cx: float,
@@ -238,9 +254,12 @@ def draw_arc(
     color: jnp.ndarray = BLACK,
     sharpness: float = 400,
 ):
+    "Draw circular arc from angle a0 to a1 (mod 2*Pi), clockwise"
     inner = _circle_alpha(c.mesh, cx, cy, r - lineweight, sharpness)
     outer = _circle_alpha(c.mesh, cx, cy, r + lineweight, sharpness)
     alpha = (1 - inner) * outer
+
+    # plt.imshow(alpha)
 
     p0 = jnp.array([jnp.cos(a0) * r + cx, jnp.sin(a0) * r + cy])
     n0 = jnp.array([jnp.sin(a0), -jnp.cos(a0)])
@@ -249,6 +268,36 @@ def draw_arc(
     n1 = jnp.array([-jnp.sin(a1), jnp.cos(a1)])
 
     alpha *= _linear_alpha(c.mesh, p0, n0, sharpness)
+    # plt.imshow(alpha)
+
     alpha *= _linear_alpha(c.mesh, p1, n1, sharpness)
+    # plt.imshow(alpha)
+
+    return Canvas(_fill(c.image, alpha, color), c.mesh)
+
+
+def fill_arc(
+    c: Canvas,
+    cx: float,
+    cy: float,
+    r: float,
+    a0: float,
+    a1: float,
+    color: jnp.ndarray = BLACK,
+    sharpness: float = 400,
+):
+    "Fill the convex hull of the circular arc from angle a0 to a1 (mod 2*Pi), clockwise"
+
+    circ = _circle_alpha(c.mesh, cx, cy, r, sharpness)
+
+    p0 = jnp.array([jnp.cos(a0) * r + cx, jnp.sin(a0) * r + cy])
+    p1 = jnp.array([jnp.cos(a1) * r + cx, jnp.sin(a1) * r + cy])
+
+    v = p1 - p0
+    n = normalize(_rot90(v))
+
+    lin = _linear_alpha(c.mesh, p0, n, sharpness)
+
+    alpha = circ * lin
 
     return Canvas(_fill(c.image, alpha, color), c.mesh)
