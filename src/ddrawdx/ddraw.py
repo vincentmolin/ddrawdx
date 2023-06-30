@@ -7,7 +7,7 @@ import matplotlib.axes
 
 from typing import Optional, NamedTuple, Tuple, List
 
-format_channels = {"GRAY": 1, "RGB": 3}
+format_channels = {"GRAY": 1, "GREY": 1, "RGB": 3}
 
 Mesh = List[jnp.ndarray]
 Image = jnp.ndarray
