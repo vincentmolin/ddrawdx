@@ -5,22 +5,33 @@ dependencies = [
   "jax",
   "matplotlib",
 ]
-  
+
 authors = [
   { name="Vincent Molin", email="molinv@chalmers.se" },
 ]
 description = "Differentiable drawing primitives in JAX"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.12.21,<0.13"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+docs = ["mkdocs>=1.6", "mkdocs-material>=9.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.build-backend]
+source-include = ["tests/**", "docs/**", "example/**", "mkdocs.yml", "uv.lock"]
 
 [project.urls]
 "Homepage" = "https://github.com/vincentmolin/ddrawdx"
