@@ -1,322 +1,169 @@
-# Ddraw
+# Drawing API
 
-[Ddrawdx Index](../../README.md#ddrawdx-index) /
-`src` /
-[Ddrawdx](./index.md#ddrawdx) /
-Ddraw
+Drawing and mesh transformations return new canvases and can be composed with
+`jax.jit` and `jax.grad`. No library function applies JIT internally. When a
+drawing sequence constructs a canvas, its dimensions and format must be known
+at compile time. `show` creates matplotlib objects and runs outside JIT.
 
-> Auto-generated documentation for [src.ddrawdx.ddraw](../../../src/ddrawdx/ddraw.py) module.
+Images have shape `(height, width, channels)`; both meshes have shape
+`(height, width)`. The default coordinates span `[0, 1]` in each direction,
+with the origin at the lower left. Scalar colors broadcast to all channels;
+vectors must contain exactly one value per channel.
 
-- [Ddraw](#ddraw)
-  - [Canvas](#canvas)
-  - [canvas](#canvas)
-  - [draw_line](#draw_line)
-  - [fill_circle](#fill_circle)
-  - [fill_poly](#fill_poly)
-  - [fill_rect](#fill_rect)
-  - [normalize](#normalize)
-  - [origin](#origin)
-  - [restore](#restore)
-  - [rotate](#rotate)
-  - [rotmat](#rotmat)
-  - [scale](#scale)
-  - [show](#show)
-  - [translate](#translate)
+Transitions use sigmoids with sharpness measured in mesh coordinates. Circles
+and polygon edges use distances regularized at floating-point precision to
+keep gradients finite at zero distance. Polygons use the even-odd interior
+rule and support concave shapes and either vertex order.
 
-## Canvas
+Polygon gradients are piecewise where the nearest edge changes. Empty and full
+arc sweeps also have branch boundaries. Apply `jax.grad` to parameters away from
+these boundaries when a smooth parameter gradient is required.
 
-[Show source in ddraw.py:16](../../../src/ddrawdx/ddraw.py#L16)
+## Canvas data
 
-A Canvas is a tuple with pixel values in the width*height*channels array 'image'
-and coordinate meshes in 'mesh'. Construct with 'ddrawdx.canvas'
-
-#### Signature
+Pixel values in a (height, width, channels) image and two coordinate meshes.
 
 ```python
 class Canvas(NamedTuple):
-    ...
+    image: Image
+    mesh: Mesh
 ```
-
-
-
-## canvas
-
-[Show source in ddraw.py:56](../../../src/ddrawdx/ddraw.py#L56)
-
-Constructs a canvas of dimensions ```width x height```, with coordinates [0,...,1] x [0,...,1]
-and origin in the lower left corner.
-
-#### Signature
-
-```python
-def canvas(
-    width: int,
-    height: Optional[int] = None,
-    format: str = "RGB",
-    background: Optional[jnp.ndarray] = None,
-) -> Canvas:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-
-
-
-## draw_line
-
-[Show source in ddraw.py:177](../../../src/ddrawdx/ddraw.py#L177)
-
-Draw a line between (x0,y0) and (x1,y1)
-
-#### Signature
-
-```python
-@jax.jit
-def draw_line(
-    c: Canvas,
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    lineweight: float = 0.01,
-    color: jnp.ndarray = jnp.array([0.0, 0.0, 0.0]),
-    sharpness: float = 400.0,
-) -> Canvas:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-
-
-
-## fill_circle
-
-[Show source in ddraw.py:197](../../../src/ddrawdx/ddraw.py#L197)
-
-#### Signature
-
-```python
-@jax.jit
-def fill_circle(
-    c: Canvas,
-    cx: float,
-    cy: float,
-    r: float,
-    color: jnp.ndarray,
-    sharpness: float = 400.0,
-):
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-
-
-
-## fill_poly
-
-[Show source in ddraw.py:160](../../../src/ddrawdx/ddraw.py#L160)
-
-Fill polygon with clockwise oriented corners in 'ps'
-
-#### Signature
-
-```python
-@jax.jit
-def fill_poly(
-    c: Canvas, ps: jnp.array, color=jnp.array([0.0, 0.0, 0.0]), sharpness: float = 300.0
-) -> Canvas:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-
-
-
-## fill_rect
-
-[Show source in ddraw.py:145](../../../src/ddrawdx/ddraw.py#L145)
-
-Fill axis-parallell rectangle with corners in (x0,y0), (x1,y1).
-
-#### Signature
-
-```python
-@jax.jit
-def fill_rect(
-    c: Canvas,
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    color: jnp.ndarray,
-    sharpness: float = 100.0,
-) -> Canvas:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-
-
-
-## normalize
-
-[Show source in ddraw.py:41](../../../src/ddrawdx/ddraw.py#L41)
-
-#### Signature
-
-```python
-@jax.jit
-def normalize(x: jnp.ndarray) -> jnp.ndarray:
-    ...
-```
-
-
-
-## origin
-
-[Show source in ddraw.py:76](../../../src/ddrawdx/ddraw.py#L76)
-
-Translates the origin of 'c' to the center, and rescales the mesh to [-1,...,1]x[-1,...,1].
-Returns the new Canvas and the old mesh for [restore](#restore)
-
-#### Signature
-
-```python
-@jax.jit
-def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-- [Mesh](#mesh)
-
-
-
-## restore
-
-[Show source in ddraw.py:112](../../../src/ddrawdx/ddraw.py#L112)
-
-Restores coordinates to earlier mesh
-
-#### Signature
-
-```python
-@jax.jit
-def restore(c: Canvas, mesh: Mesh) -> Canvas:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-- [Mesh](#mesh)
-
-
-
-## rotate
-
-[Show source in ddraw.py:101](../../../src/ddrawdx/ddraw.py#L101)
-
-Rotate mesh 'angle' radians
-
-#### Signature
-
-```python
-@jax.jit
-def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-- [Mesh](#mesh)
-
-
-
-## rotmat
-
-[Show source in ddraw.py:46](../../../src/ddrawdx/ddraw.py#L46)
-
-2D rotation matrix
-
-#### Signature
-
-```python
-@jax.jit
-def rotmat(angle: float) -> jnp.ndarray:
-    ...
-```
-
-
-
-## scale
-
-[Show source in ddraw.py:87](../../../src/ddrawdx/ddraw.py#L87)
-
-Scale mesh, returning the new Canvas and old mesh for [restore](#restore)
-
-#### Signature
-
-```python
-@jax.jit
-def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]:
-    ...
-```
-
-#### See also
-
-- [Canvas](#canvas)
-- [Mesh](#mesh)
-
-
 
 ## show
 
-[Show source in ddraw.py:26](../../../src/ddrawdx/ddraw.py#L26)
-
-Simple 'matplotlib.pyplot.imshow' wrapper.
-
-#### Signature
-
 ```python
-def show(c: Canvas) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
-    ...
+def show(c: Canvas) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]
 ```
 
-#### See also
+Display a canvas with matplotlib, returning the figure and axes.
 
-- [Canvas](#canvas)
+## normalize
 
+```python
+def normalize(x: jnp.ndarray) -> jnp.ndarray
+```
 
+Normalize a vector, with a finite result and derivative at zero.
+
+## rotmat
+
+```python
+def rotmat(angle: float) -> jnp.ndarray
+```
+
+Return the 2D rotation matrix for an angle in radians.
+
+## canvas
+
+```python
+def canvas(width: int, height: Optional[int]=None, format: str='RGB', background: Optional[jnp.ndarray]=None) -> Canvas
+```
+
+Construct a white canvas over [0, 1] x [0, 1], with origin at lower left.
+
+The image has shape (height, width, channels). Backgrounds and drawing colors
+may be scalars or vectors with one value per channel.
+
+## origin
+
+```python
+def origin(c: Canvas) -> Tuple[Canvas, Mesh]
+```
+
+Reset the mesh to [-1, 1] x [-1, 1]; return the canvas and previous mesh.
+
+## scale
+
+```python
+def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]
+```
+
+Scale the mesh, returning the canvas and previous mesh for restore.
 
 ## translate
 
-[Show source in ddraw.py:94](../../../src/ddrawdx/ddraw.py#L94)
-
-Translate mesh 'dx','dy' units
-
-#### Signature
-
 ```python
-@jax.jit
-def translate(c: Canvas, dx: float, dy: float) -> Tuple[Canvas, Mesh]:
-    ...
+def translate(c: Canvas, dx: float, dy: float) -> Tuple[Canvas, Mesh]
 ```
 
-#### See also
+Translate the mesh by (dx, dy); return the canvas and previous mesh.
 
-- [Canvas](#canvas)
-- [Mesh](#mesh)
+## rotate
+
+```python
+def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]
+```
+
+Rotate the mesh by angle radians; return the canvas and previous mesh.
+
+## restore
+
+```python
+def restore(c: Canvas, mesh: Mesh) -> Canvas
+```
+
+Restore coordinates to an earlier mesh without changing pixel values.
+
+## fill_rect
+
+```python
+def fill_rect(c: Canvas, x0: float, y0: float, x1: float, y1: float, color: jnp.ndarray, sharpness: float=100.0) -> Canvas
+```
+
+Fill an axis-aligned rectangle with lower and upper corners (x0,y0), (x1,y1).
+
+## fill_poly
+
+```python
+def fill_poly(c: Canvas, ps: jnp.ndarray, color=0.0, sharpness: float=300.0) -> Canvas
+```
+
+Fill a convex or concave polygon with vertices in either order.
+
+Use an (n, 2) array with at least three vertices. The even-odd rule determines
+the interior; a sigmoid of signed distance to the nearest edge feathers it.
+
+## draw_line
+
+```python
+def draw_line(c: Canvas, x0: float, y0: float, x1: float, y1: float, lineweight: float=0.01, color=0.0, sharpness: float=400.0) -> Canvas
+```
+
+Draw a line with square caps and half-width lineweight.
+
+## fill_circle
+
+```python
+def fill_circle(c: Canvas, cx: float, cy: float, r: float, color: jnp.ndarray, sharpness: float=400.0) -> Canvas
+```
+
+Fill a circle of radius r centered at (cx, cy).
+
+## draw_circle
+
+```python
+def draw_circle(c: Canvas, cx: float, cy: float, r: float, lineweight: float=0.01, color=0.0, sharpness: float=400.0) -> Canvas
+```
+
+Draw a circle of radius r with half-width lineweight.
+
+## draw_arc
+
+```python
+def draw_arc(c: Canvas, cx: float, cy: float, r: float, a0: float, a1: float, lineweight: float=0.01, color=0.0, sharpness: float=400.0) -> Canvas
+```
+
+Draw a clockwise arc from a0 to a1 in radians, wrapping modulo 2*pi.
+
+Equal angles draw nothing; an explicit whole turn draws a full circle.
+
+## fill_arc
+
+```python
+def fill_arc(c: Canvas, cx: float, cy: float, r: float, a0: float, a1: float, color=0.0, sharpness: float=400.0) -> Canvas
+```
+
+Fill the convex hull of a clockwise arc, bounded by its chord and circle.
+
+Angles wrap modulo 2*pi. Equal angles fill nothing; an explicit whole turn
+fills the full disk.
