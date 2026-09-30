@@ -1,11 +1,12 @@
-import jax.numpy as jnp
+"""Differentiable drawing primitives; apply JAX transformations at the call site."""
+
+from typing import List, NamedTuple, Optional, Tuple
+
 import jax
-
-import matplotlib.pyplot as plt
-import matplotlib.figure
+import jax.numpy as jnp
 import matplotlib.axes
-
-from typing import Optional, NamedTuple, Tuple, List
+import matplotlib.figure
+import matplotlib.pyplot as plt
 
 format_channels = {"GRAY": 1, "GREY": 1, "RGB": 3}
 
@@ -19,43 +20,47 @@ WHITE = jnp.array([1.0, 1.0, 1.0])
 
 
 class Canvas(NamedTuple):
-    """
-    A Canvas is a tuple with pixel values in the width*height*channels array 'image'
-    and coordinate meshes in 'mesh'. Construct with 'ddrawdx.canvas'
-    """
+    """Pixel values in a (height, width, channels) image and two coordinate meshes."""
 
-    image: jnp.ndarray
-    mesh: List[jnp.ndarray]
+    image: Image
+    mesh: Mesh
 
 
 def show(c: Canvas) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
-    """
-    Simple 'matplotlib.pyplot.imshow' wrapper.
-    """
+    """Display a canvas with matplotlib, returning the figure and axes."""
     fig, ax = plt.subplots()
     if c.image.shape[-1] > 1:
         ax.imshow(c.image)
     else:
-        ax.imshow(c.image, cmap="gray", vmin=0, vmax=1)
+        ax.imshow(c.image[..., 0], cmap="gray", vmin=0, vmax=1)
     ax.tick_params(
         left=False, right=False, labelleft=False, labelbottom=False, bottom=False
     )
     return fig, ax
 
 
-@jax.jit
 def normalize(x: jnp.ndarray) -> jnp.ndarray:
-    return x / jnp.linalg.norm(x)
+    """Normalize a vector, with a finite result and derivative at zero."""
+    x = jnp.asarray(x)
+    x = x.astype(jnp.result_type(x, jnp.float32))
+    eps = jnp.finfo(x.dtype).eps
+    return x / jnp.sqrt(jnp.sum(x**2) + eps**2)
 
 
-@jax.jit
 def rotmat(angle: float) -> jnp.ndarray:
-    """
-    2D rotation matrix
-    """
+    """Return the 2D rotation matrix for an angle in radians."""
     s = jnp.sin(angle)
     c = jnp.cos(angle)
     return jnp.array([[c, -s], [s, c]])
+
+
+def _color(color, channels):
+    color = jnp.asarray(color)
+    if color.ndim == 0:
+        return jnp.broadcast_to(color, (channels,))
+    if color.shape != (channels,):
+        raise ValueError(f"Color must be a scalar or have shape ({channels},).")
+    return color
 
 
 def canvas(
@@ -64,98 +69,75 @@ def canvas(
     format: str = "RGB",
     background: Optional[jnp.ndarray] = None,
 ) -> Canvas:
+    """Construct a white canvas over [0, 1] x [0, 1], with origin at lower left.
+
+    The image has shape (height, width, channels). Backgrounds and drawing colors
+    may be scalars or vectors with one value per channel.
     """
-    Constructs a canvas of dimensions ```width x height```, with coordinates [0,...,1] x [0,...,1]
-    and origin in the lower left corner.
-    """
-    height = height or width
+    height = width if height is None else height
+    if width <= 0 or height <= 0:
+        raise ValueError("Canvas dimensions must be positive.")
+    if format not in format_channels:
+        raise ValueError("Format must be RGB, GRAY, or GREY.")
     channels = format_channels[format]
-    image = jnp.ones((width, height, channels))
+    image = jnp.ones((height, width, channels))
     if background is not None:
-        assert channels == len(background)
-        image = image * jnp.expand_dims(background, axis=[0, 1])
+        image = image * _color(background, channels)
     mesh = jnp.meshgrid(jnp.linspace(0, 1, width), jnp.linspace(1, 0, height))
     return Canvas(image=image, mesh=mesh)
 
 
-# @jax.jit
 def origin(c: Canvas) -> Tuple[Canvas, Mesh]:
-    """
-    Translates the origin of 'c' to the center, and rescales the mesh to [-1,...,1]x[-1,...,1].
-    Returns the new Canvas and the old mesh for ```restore```
-    """
-    w, h, _ = c.image.shape
+    """Reset the mesh to [-1, 1] x [-1, 1]; return the canvas and previous mesh."""
+    h, w, _ = c.image.shape
     mesh = jnp.meshgrid(jnp.linspace(-1, 1, w), jnp.linspace(1, -1, h))
     return Canvas(c.image, mesh), c.mesh
 
 
-# @jax.jit
 def scale(c: Canvas, xscale: float, yscale: float) -> Tuple[Canvas, Mesh]:
-    """Scale mesh, returning the new Canvas and old mesh for ```restore```"""
+    """Scale the mesh, returning the canvas and previous mesh for restore."""
     mesh = c.mesh
     return Canvas(image=c.image, mesh=[mesh[0] / xscale, mesh[1] / yscale]), mesh
 
 
-# @jax.jit
 def translate(c: Canvas, dx: float, dy: float) -> Tuple[Canvas, Mesh]:
-    """Translate mesh 'dx','dy' units"""
+    """Translate the mesh by (dx, dy); return the canvas and previous mesh."""
     mesh = c.mesh
     return Canvas(image=c.image, mesh=[mesh[0] - dx, mesh[1] - dy]), mesh
 
 
-# @jax.jit
 def rotate(c: Canvas, angle: float) -> Tuple[Canvas, Mesh]:
-    """Rotate mesh 'angle' radians"""
-    m = jnp.stack(c.mesh, axis=-1)
-    m = jnp.reshape(m, (-1, 2))
-    rm = rotmat(angle)
-    m = jnp.dot(rm, jnp.transpose(m))
-    m = jnp.reshape(jnp.transpose(m), (c.mesh[0].shape[0], -1, 2))
-    return Canvas(c.image, [m[:, :, 0], m[:, :, 1]]), c.mesh
+    """Rotate the mesh by angle radians; return the canvas and previous mesh."""
+    m = jnp.stack(c.mesh, axis=-1) @ rotmat(angle).T
+    return Canvas(c.image, [m[..., 0], m[..., 1]]), c.mesh
 
 
-# @jax.jit
 def restore(c: Canvas, mesh: Mesh) -> Canvas:
-    """Restores coordinates to earlier mesh"""
+    """Restore coordinates to an earlier mesh without changing pixel values."""
     return Canvas(c.image, mesh)
 
 
-@jax.jit
 def _bump_1d(x, x0, x1, sharpness: float = 100.0):
     return jax.nn.sigmoid(sharpness * (x - x0)) * jax.nn.sigmoid(-sharpness * (x - x1))
 
 
-@jax.jit
-def _orth_bump(x, y, x0, y0, x1, y1, sharpness: float = 100.0):
-    return _bump_1d(x, x0, x1, sharpness) * _bump_1d(y, y0, y1, sharpness)
+def _fill(image: Image, alpha: jnp.ndarray, color):
+    color = _color(color, image.shape[-1])
+    alpha = alpha[..., None]
+    return alpha * color + (1 - alpha) * image
 
 
-@jax.jit
-def _m_orth_bump(mesh, x0, y0, x1, y1, sharpness: float = 100.0):
-    return _orth_bump(mesh[0], mesh[1], x0, y0, x1, y1, sharpness)
-
-
-@jax.jit
-def _fill(image: jnp.ndarray, alpha: jnp.ndarray, color: jnp.ndarray):
-    add = jnp.tensordot(alpha, color, axes=0)
-    keep = (1 - jnp.expand_dims(alpha, 2)) * image
-    return add + keep
-
-
-@jax.jit
 def _rot90(v: jnp.ndarray):
     return jnp.array([-v[1], v[0]])
 
 
-@jax.jit
-def _linear_alpha(mesh, reference, normal, sharpness):
-    d = jnp.dot(normal, reference)
-    msh = jnp.stack(mesh, axis=-1)
-    act = jnp.dot(msh, normal) - d
-    return jax.nn.sigmoid(-sharpness * act)
+def _distance(squared):
+    # Smooth the norm at zero, where sqrt otherwise gives NaN gradients. The
+    # subtraction keeps the distance zero on an edge or at a circle's center.
+    eps = jnp.finfo(squared.dtype).eps
+    return jnp.sqrt(squared + eps**2) - eps
 
 
-# @jax.jit
 def fill_rect(
     c: Canvas,
     x0: float,
@@ -165,29 +147,55 @@ def fill_rect(
     color: jnp.ndarray,
     sharpness: float = 100.0,
 ) -> Canvas:
-    """Fill axis-parallell rectangle with corners in (x0,y0), (x1,y1)."""
-    alpha = _m_orth_bump(c.mesh, x0, y0, x1, y1, sharpness)
+    """Fill an axis-aligned rectangle with lower and upper corners (x0,y0), (x1,y1)."""
+    alpha = _bump_1d(c.mesh[0], x0, x1, sharpness) * _bump_1d(
+        c.mesh[1], y0, y1, sharpness
+    )
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
-# @jax.jit
 def fill_poly(
-    c: Canvas, ps: jnp.array, color=jnp.array([0.0, 0.0, 0.0]), sharpness: float = 300.0
+    c: Canvas, ps: jnp.ndarray, color=0.0, sharpness: float = 300.0
 ) -> Canvas:
-    """Fill polygon with clockwise oriented corners in 'ps'"""
-    msh = jnp.stack(c.mesh, axis=-1)
-    alpha = jnp.ones(msh.shape[:-1])
-    nps = ps.shape[0]
-    for i in range(nps):
-        v = normalize(ps[(i + 1) % nps] - ps[i])
-        n = _rot90(v)
-        d = jnp.dot(n, ps[i])
-        act = jnp.dot(msh, n) - d
-        alpha = alpha * jax.nn.sigmoid(-sharpness * act)
+    """Fill a convex or concave polygon with vertices in either order.
+
+    Use an (n, 2) array with at least three vertices. The even-odd rule determines
+    the interior; a sigmoid of signed distance to the nearest edge feathers it.
+    """
+    ps = jnp.asarray(ps)
+    ps = ps.astype(jnp.result_type(ps, jnp.float32))
+    if ps.ndim != 2 or ps.shape[1] != 2 or ps.shape[0] < 3:
+        raise ValueError("Polygon vertices must have shape (n, 2), with n >= 3.")
+
+    ends = jnp.roll(ps, -1, axis=0)
+    edges = ends - ps
+    offsets = jnp.stack(c.mesh, axis=-1)[None, ...] - ps[:, None, None, :]
+    lengths_sq = jnp.sum(edges**2, axis=-1)
+    # A repeated vertex is a zero-length edge; treat it as its endpoint.
+    denominators = jnp.where(lengths_sq > 0, lengths_sq, 1)
+    projection = jnp.clip(
+        jnp.sum(offsets * edges[:, None, None, :], axis=-1)
+        / denominators[:, None, None],
+        0,
+        1,
+    )
+    nearest = offsets - projection[..., None] * edges[:, None, None, :]
+    distance = _distance(jnp.min(jnp.sum(nearest**2, axis=-1), axis=0))
+
+    x, y = c.mesh
+    y0, y1 = ps[:, 1, None, None], ends[:, 1, None, None]
+    dy = y1 - y0
+    intersection_x = (
+        ps[:, 0, None, None]
+        + (y - y0) * edges[:, 0, None, None] / jnp.where(dy != 0, dy, 1)
+    )
+    crossings = ((y0 > y) != (y1 > y)) & (x < intersection_x)
+    inside = jnp.sum(crossings, axis=0) % 2 == 1
+    signed_distance = jnp.where(inside, distance, -distance)
+    alpha = jax.nn.sigmoid(sharpness * signed_distance)
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
-# @jax.jit
 def draw_line(
     c: Canvas,
     x0: float,
@@ -195,26 +203,23 @@ def draw_line(
     x1: float,
     y1: float,
     lineweight: float = 0.01,
-    color: jnp.ndarray = jnp.array([0.0, 0.0, 0.0]),
+    color=0.0,
     sharpness: float = 400.0,
 ) -> Canvas:
-    """Draw a line between (x0,y0) and (x1,y1)"""
+    """Draw a line with square caps and half-width lineweight."""
     p0 = jnp.array([x0, y0])
     p1 = jnp.array([x1, y1])
     v = normalize(p1 - p0) * lineweight
     n = _rot90(v)
     ps = jnp.array([p0 - v + n, p1 + v + n, p1 + v - n, p0 - v - n])
-    return fill_poly(c, ps, sharpness, color)
+    return fill_poly(c, ps, color=color, sharpness=sharpness)
 
 
 def _circle_alpha(mesh, cx, cy, r, sharpness):
     sqdist = (mesh[0] - cx) ** 2 + (mesh[1] - cy) ** 2
-    dist = jnp.sqrt(sqdist)
-    alpha = jax.nn.sigmoid(sharpness * (r - dist))
-    return alpha
+    return jax.nn.sigmoid(sharpness * (r - _distance(sqdist)))
 
 
-# @jax.jit
 def fill_circle(
     c: Canvas,
     cx: float,
@@ -222,7 +227,8 @@ def fill_circle(
     r: float,
     color: jnp.ndarray,
     sharpness: float = 400.0,
-):
+) -> Canvas:
+    """Fill a circle of radius r centered at (cx, cy)."""
     alpha = _circle_alpha(c.mesh, cx, cy, r, sharpness)
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
@@ -233,14 +239,28 @@ def draw_circle(
     cy: float,
     r: float,
     lineweight: float = 0.01,
-    color: jnp.ndarray = BLACK,
-    sharpness: float = 400,
-):
-    "Draw circle with radius r around (cx, cy)"
+    color=0.0,
+    sharpness: float = 400.0,
+) -> Canvas:
+    """Draw a circle of radius r with half-width lineweight."""
     inner = _circle_alpha(c.mesh, cx, cy, r - lineweight, sharpness)
     outer = _circle_alpha(c.mesh, cx, cy, r + lineweight, sharpness)
     alpha = (1 - inner) * outer
     return Canvas(_fill(c.image, alpha, color), c.mesh)
+
+
+def _clockwise_sweep(a0, a1):
+    delta = jnp.asarray(a0) - jnp.asarray(a1)
+    sweep = jnp.mod(delta, 2 * jnp.pi)
+    turns = delta / (2 * jnp.pi)
+    # Subtracting arbitrary start/end angles can round a whole turn slightly
+    # above or below 2*pi. Recognize it within floating-point precision.
+    eps = jnp.finfo(sweep.dtype).eps
+    whole_turn = (jnp.round(turns) != 0) & (
+        jnp.abs(turns - jnp.round(turns))
+        <= 4 * eps * jnp.maximum(1, jnp.abs(turns))
+    )
+    return jnp.where(whole_turn, 2 * jnp.pi, sweep)
 
 
 def draw_arc(
@@ -251,28 +271,27 @@ def draw_arc(
     a0: float,
     a1: float,
     lineweight: float = 0.01,
-    color: jnp.ndarray = BLACK,
-    sharpness: float = 400,
-):
-    "Draw circular arc from angle a0 to a1 (mod 2*Pi), clockwise"
+    color=0.0,
+    sharpness: float = 400.0,
+) -> Canvas:
+    """Draw a clockwise arc from a0 to a1 in radians, wrapping modulo 2*pi.
+
+    Equal angles draw nothing; an explicit whole turn draws a full circle.
+    """
     inner = _circle_alpha(c.mesh, cx, cy, r - lineweight, sharpness)
     outer = _circle_alpha(c.mesh, cx, cy, r + lineweight, sharpness)
-    alpha = (1 - inner) * outer
-
-    # plt.imshow(alpha)
-
-    p0 = jnp.array([jnp.cos(a0) * r + cx, jnp.sin(a0) * r + cy])
-    n0 = jnp.array([jnp.sin(a0), -jnp.cos(a0)])
-
-    p1 = jnp.array([jnp.cos(a1) * r + cx, jnp.sin(a1) * r + cy])
-    n1 = jnp.array([-jnp.sin(a1), jnp.cos(a1)])
-
-    alpha *= _linear_alpha(c.mesh, p0, n0, sharpness)
-    # plt.imshow(alpha)
-
-    alpha *= _linear_alpha(c.mesh, p1, n1, sharpness)
-    # plt.imshow(alpha)
-
+    sweep = _clockwise_sweep(a0, a1)
+    x, y = c.mesh[0] - cx, c.mesh[1] - cy
+    start = -jnp.sin(a0) * x + jnp.cos(a0) * y
+    end = jnp.sin(a1) * x - jnp.cos(a1) * y
+    # Short sweeps intersect the endpoint half-planes; long sweeps unite them.
+    distance = jnp.where(
+        sweep <= jnp.pi, jnp.maximum(start, end), jnp.minimum(start, end)
+    )
+    angular_alpha = jax.nn.sigmoid(-sharpness * distance)
+    angular_alpha = jnp.where(sweep == 0, 0, angular_alpha)
+    angular_alpha = jnp.where(sweep == 2 * jnp.pi, 1, angular_alpha)
+    alpha = (1 - inner) * outer * angular_alpha
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 
 
@@ -283,21 +302,23 @@ def fill_arc(
     r: float,
     a0: float,
     a1: float,
-    color: jnp.ndarray = BLACK,
-    sharpness: float = 400,
-):
-    "Fill the convex hull of the circular arc from angle a0 to a1 (mod 2*Pi), clockwise"
+    color=0.0,
+    sharpness: float = 400.0,
+) -> Canvas:
+    """Fill the convex hull of a clockwise arc, bounded by its chord and circle.
 
+    Angles wrap modulo 2*pi. Equal angles fill nothing; an explicit whole turn
+    fills the full disk.
+    """
     circ = _circle_alpha(c.mesh, cx, cy, r, sharpness)
-
-    p0 = jnp.array([jnp.cos(a0) * r + cx, jnp.sin(a0) * r + cy])
-    p1 = jnp.array([jnp.cos(a1) * r + cx, jnp.sin(a1) * r + cy])
-
-    v = p1 - p0
-    n = normalize(_rot90(v))
-
-    lin = _linear_alpha(c.mesh, p0, n, sharpness)
-
-    alpha = circ * lin
-
-    return Canvas(_fill(c.image, alpha, color), c.mesh)
+    sweep = _clockwise_sweep(a0, a1)
+    midpoint = a0 - sweep / 2
+    distance = (
+        (c.mesh[0] - cx) * jnp.cos(midpoint)
+        + (c.mesh[1] - cy) * jnp.sin(midpoint)
+        - r * jnp.cos(sweep / 2)
+    )
+    chord_alpha = jax.nn.sigmoid(sharpness * distance)
+    chord_alpha = jnp.where(sweep == 0, 0, chord_alpha)
+    chord_alpha = jnp.where(sweep == 2 * jnp.pi, 1, chord_alpha)
+    return Canvas(_fill(c.image, circ * chord_alpha, color), c.mesh)
