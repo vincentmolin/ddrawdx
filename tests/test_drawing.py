@@ -113,6 +113,62 @@ def test_polygon_vertex_gradient_matches_finite_difference(execute):
     np.testing.assert_allclose(gradient, finite_difference, rtol=0.005, atol=0.005)
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("repeat_endpoint", [False, True])
+@pytest.mark.parametrize(
+    "vertices",
+    [
+        [[0.25, 0.25], [0.25, 0.75], [0.75, 0.75], [0.75, 0.25]],
+        [[0, 0], [0, 1], [0.5, 1], [0.5, 0.5], [1, 0.5], [1, 0]],
+        [[0, 0], [1, 1], [0, 1], [1, 0]],
+    ],
+    ids=["square", "concave", "self-intersecting"],
+)
+def test_polygon_edge_translation_gradients(execute, vertices, reverse, repeat_endpoint):
+    ps = jnp.array(vertices, dtype=jnp.float32)
+    # Sample edge interiors away from corners and self-intersections.
+    samples = 0.75 * ps + 0.25 * jnp.roll(ps, -1, axis=0)
+    c = point_canvas(samples, channels=1)
+    if reverse:
+        ps = ps[::-1]
+    if repeat_endpoint:
+        ps = jnp.concatenate([ps, ps[:1]])
+
+    def pixels(translation):
+        return drx.fill_poly(c, ps + translation, sharpness=100.0).image[0, :, 0]
+
+    zero = jnp.zeros(2)
+    gradient = execute(jax.jacrev(pixels))(zero)
+    step = 0.0001
+    finite_difference = jnp.stack(
+        [(pixels(delta) - pixels(-delta)) / (2 * step) for delta in jnp.eye(2) * step],
+        axis=-1,
+    )
+    np.testing.assert_allclose(pixels(zero), 0.5, atol=1e-6)
+    np.testing.assert_allclose(jnp.linalg.norm(gradient, axis=-1), 25, atol=1e-5)
+    np.testing.assert_allclose(gradient, finite_difference, rtol=0.003, atol=0.003)
+
+
+def test_line_edge_translation_gradients(execute):
+    c = point_canvas([[0.5, 0.625], [0.125, 0.5]], channels=1)
+
+    def pixels(translation):
+        dx, dy = translation
+        return drx.draw_line(
+            c, 0.25 + dx, 0.5 + dy, 0.75 + dx, 0.5 + dy,
+            lineweight=0.125, sharpness=100.0,
+        ).image[0, :, 0]
+
+    gradient = execute(jax.jacrev(pixels))(jnp.zeros(2))
+    np.testing.assert_allclose(gradient, [[0, -25], [25, 0]], atol=1e-5)
+    step = 0.0001
+    finite_difference = jnp.stack(
+        [(pixels(delta) - pixels(-delta)) / (2 * step) for delta in jnp.eye(2) * step],
+        axis=-1,
+    )
+    np.testing.assert_allclose(gradient, finite_difference, rtol=0.003, atol=0.003)
+
+
 CIRCULAR_PRIMITIVES = [
     pytest.param(
         lambda c, q: drx.fill_circle(c, q[0], q[1], 0.23, 0.0, sharpness=60.0),

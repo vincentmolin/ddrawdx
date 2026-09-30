@@ -138,6 +138,17 @@ def _distance(squared):
     return jnp.sqrt(squared + eps**2) - eps
 
 
+def _ray_crossings(x, y, starts, ends):
+    """Edges crossed by a ray in the positive x direction."""
+    y0, y1 = starts[:, 1, None, None], ends[:, 1, None, None]
+    dy = y1 - y0
+    intersection_x = starts[:, 0, None, None] + (
+        (y - y0) * (ends[:, 0] - starts[:, 0])[:, None, None]
+        / jnp.where(dy != 0, dy, 1)
+    )
+    return ((y0 > y) != (y1 > y)) & (x < intersection_x)
+
+
 def fill_rect(
     c: Canvas,
     x0: float,
@@ -180,18 +191,41 @@ def fill_poly(
         1,
     )
     nearest = offsets - projection[..., None] * edges[:, None, None, :]
-    distance = _distance(jnp.min(jnp.sum(nearest**2, axis=-1), axis=0))
+    squared = jnp.sum(nearest**2, axis=-1)
+    closest = jnp.argmin(squared, axis=0)
+    distance = _distance(jnp.min(squared, axis=0))
 
     x, y = c.mesh
-    y0, y1 = ps[:, 1, None, None], ends[:, 1, None, None]
-    dy = y1 - y0
-    intersection_x = (
-        ps[:, 0, None, None]
-        + (y - y0) * edges[:, 0, None, None] / jnp.where(dy != 0, dy, 1)
-    )
-    crossings = ((y0 > y) != (y1 > y)) & (x < intersection_x)
+    crossings = _ray_crossings(x, y, ps, ends)
     inside = jnp.sum(crossings, axis=0) % 2 == 1
     signed_distance = jnp.where(inside, distance, -distance)
+
+    # Along an edge interior, use its signed perpendicular distance directly:
+    # taking the norm first loses the derivative when a pixel lies on the edge.
+    edge = edges[closest]
+    offset = jnp.stack(c.mesh, axis=-1) - ps[closest]
+    line_distance = (
+        edge[..., 0] * offset[..., 1] - edge[..., 1] * offset[..., 0]
+    ) / jnp.sqrt(denominators[closest])
+    direction = jnp.where(inside, 1, -1) * jnp.sign(line_distance)
+
+    # On the edge itself, determine the inward normal from the other ray
+    # crossings. A vertical ray handles horizontal edges. This uses local
+    # parity, so it also works for either winding and self-intersections.
+    other_edges = jnp.arange(ps.shape[0])[:, None, None] != closest
+    right_inside = jnp.sum(crossings & other_edges, axis=0) % 2 == 1
+    vertical = _ray_crossings(y, x, ps[:, ::-1], ends[:, ::-1])
+    above_inside = jnp.sum(vertical & other_edges, axis=0) % 2 == 1
+    boundary_direction = jnp.where(
+        edge[..., 1] != 0,
+        jnp.where(right_inside, -1, 1) * jnp.sign(edge[..., 1]),
+        jnp.where(above_inside, 1, -1) * jnp.sign(edge[..., 0]),
+    )
+    direction = jnp.where(line_distance == 0, boundary_direction, direction)
+    t = jnp.take_along_axis(projection, closest[None, ...], axis=0)[0]
+    signed_distance = jnp.where(
+        (t > 0) & (t < 1), direction * line_distance, signed_distance
+    )
     alpha = jax.nn.sigmoid(sharpness * signed_distance)
     return Canvas(_fill(c.image, alpha, color), c.mesh)
 

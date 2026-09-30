@@ -10,10 +10,12 @@ Images have shape `(height, width, channels)`; both meshes have shape
 with the origin at the lower left. Scalar colors broadcast to all channels;
 vectors must contain exactly one value per channel.
 
-Transitions use sigmoids with sharpness measured in mesh coordinates. Circles
-and polygon edges use distances regularized at floating-point precision to
-keep gradients finite at zero distance. Polygons use the even-odd interior
-rule and support concave shapes and either vertex order.
+Transitions use sigmoids with sharpness measured in mesh coordinates. Distances
+at circle centers and polygon vertices are regularized at floating-point
+precision to keep gradients finite. Polygon edge interiors use signed
+perpendicular distances to preserve gradients at pixel-aligned boundaries.
+Polygons use the even-odd interior rule and support concave shapes and either
+vertex order.
 
 Polygon gradients are piecewise where the nearest edge changes. Empty and full
 arc sweeps also have branch boundaries. Apply `jax.grad` to parameters away from
